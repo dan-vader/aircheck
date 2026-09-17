@@ -1,0 +1,12 @@
+dev:
+  catalog: dbr_dev_ua5816bd
+  schemas:
+    bronze: aircheck_bronze
+    silver: aircheck_silver
+    gold:   aircheck_gold
+    ops:    aircheck_ops
+  volume: raw
+  secret_scope: default
+  eventhub_namespace: evhua5816bd
+  eventhub_name: aircheck-sensor-readings
+  
