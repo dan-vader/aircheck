@@ -1,0 +1,3 @@
+batch: "<batch-role-email>"
+stream: "<stream-role-email>"
+analytics: "<analytics-role-email>"
