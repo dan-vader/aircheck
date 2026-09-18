@@ -9,5 +9,11 @@ dev:
   secret_scope: default
   secrets:
     contact_email: aircheck-contact-email
+    eventhub_conn_str: eventhub-conn-str
   eventhub_namespace: evhua5816bd
   eventhub_name: aircheck-sensor-readings
+  streaming:
+    poll_interval_sec: 90
+    max_retries: 3
+    retry_backoff_base: 2
+    request_timeout_sec: 30
