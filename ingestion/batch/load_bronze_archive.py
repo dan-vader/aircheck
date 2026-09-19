@@ -7,33 +7,29 @@ import yaml
 dbutils.widgets.text("env", "dev", "Environment")
 env = dbutils.widgets.get("env")
 
+# COMMAND ----------
+
 CONFIG_PATH = "../../config/aircheck.yaml"
-try:
-    with open(CONFIG_PATH, "r") as f:
-        full_config = yaml.safe_load(f)
-except FileNotFoundError:
-    with open("config/aircheck.yaml", "r") as f:
-        full_config = yaml.safe_load(f)
+with open(CONFIG_PATH, "r") as f:
+    full_config = yaml.safe_load(f)
 
 config = full_config[env]
 catalog_name = config["catalog"]
 bronze_schema = config["schemas"]["bronze"]
 volume_name = config["volume"]
 
-# COMMAND ----------
+batch_config = config["batch"]
 
-batch_cfg = config["batch"]
-
-target_table_name = batch_cfg["target_table"]
+target_table_name = batch_config["target_table"]
 target_table = f"{catalog_name}.{bronze_schema}.{target_table_name}"
 
 volume_root = f"/Volumes/{catalog_name}/{bronze_schema}/{volume_name}/batch"
-landing_base_path = f"{volume_root}/{batch_cfg['landing_path']}/"
-checkpoint_location = f"{volume_root}/{batch_cfg['checkpoint_path']}"
-schema_location = f"{volume_root}/{batch_cfg['schema_path']}"
+landing_base_path = f"{volume_root}/{batch_config['landing_path']}/"
+checkpoint_location = f"{volume_root}/{batch_config['checkpoint_path']}"
+schema_location = f"{volume_root}/{batch_config['schema_path']}"
 
-csv_sep = batch_cfg["csv_delimiter"]
-metadata_source_name = batch_cfg["metadata_source"]
+csv_sep = batch_config["csv_delimiter"]
+metadata_source_name = batch_config["metadata_source"]
 
 # COMMAND ----------
 
