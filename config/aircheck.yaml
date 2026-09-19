@@ -6,8 +6,17 @@ dev:
     gold:   aircheck_gold
     ops:    aircheck_ops
   volume: raw
+  key_vault_name: kvua5816bd
   secret_scope: default
   secrets:
-    contact_email: aircheck-contact-email
+     contact_email: aircheck-contact-email
+     eventhub_conn_str: aircheck-eventhub-conn-str
   eventhub_namespace: evhua5816bd
   eventhub_name: aircheck-sensor-readings
+  streaming:
+    poll_interval_sec: 90
+    max_retries: 3
+    retry_backoff_base: 2
+    request_timeout_sec: 30
+    sensor_type_filter: "SDS011"
+    country_filter: "UA,PL,DE"
