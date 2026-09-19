@@ -62,7 +62,7 @@ async def get_secrets(cfg: dict[str, Any]) -> dict[str, str]:
 
 
 def build_filter_url(sensor_type_filter: str, country_filter: str) -> str:
-    return f"{API_FILTER_BASE}/type={sensor_type_filter}/country={country_filter}"
+    return f"{API_FILTER_BASE}/type={sensor_type_filter}&country={country_filter}"
 
 
 async def fetch_filtered(
@@ -186,7 +186,7 @@ async def poll_cycle(
 
     sent = await send_events(producer, events)
     log.info(
-        "poll cycle done: sensors_in_response=%d events_sent=%d filter=type=%s/country=%s",
+        "poll cycle done: sensors_in_response=%d events_sent=%d filter=type=%s&country=%s",
         len(records), sent, sensor_type_filter, country_filter,
     )
 
@@ -202,7 +202,7 @@ async def run(env: str, sensor_filter_override: str | None, shutdown_event: asyn
     headers = {"User-Agent": f"aircheck-producer (contact: {secrets['contact_email']})"}
 
     log.info(
-        "starting producer env=%s eventhub=%s filter=type=%s/country=%s streaming_cfg=%s",
+        "starting producer env=%s eventhub=%s filter=type=%s&country=%s streaming_cfg=%s",
         env, cfg["eventhub_name"], sensor_type_filter, country_filter, streaming_cfg,
     )
 
