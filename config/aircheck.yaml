@@ -22,3 +22,15 @@ dev:
     country_filter: "UA,PL,DE"
     checkpoint_path: "/Volumes/dbr_dev_ua5816bd/aircheck_bronze/raw/_checkpoints/sensor_live"
     target_table: "sensor_live_raw"
+  batch:
+    base_url: "https://archive.sensor.community/"
+    file_limit: 50
+    target_table: "sensor_archive_raw"
+    landing_path: "archive"
+    checkpoint_path: "_checkpoints/archive_bronze"
+    schema_path: "_schemas/archive_bronze"
+    csv_delimiter: ";"
+    natural_keys:
+      - "sensor_id"
+      - "timestamp"
+    metadata_source: "sensor_archive"
