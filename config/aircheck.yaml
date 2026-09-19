@@ -9,8 +9,8 @@ dev:
   key_vault_name: kvua5816bd
   secret_scope: default
   secrets:
-    contact_email: aircheck-contact-email
-    eventhub_conn_str: eventhub-conn-str
+     contact_email: aircheck-contact-email
+     eventhub_conn_str: aircheck-eventhub-conn-str
   eventhub_namespace: evhua5816bd
   eventhub_name: aircheck-sensor-readings
   streaming:
