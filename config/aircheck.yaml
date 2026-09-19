@@ -6,6 +6,7 @@ dev:
     gold:   aircheck_gold
     ops:    aircheck_ops
   volume: raw
+  key_vault_name: kvua5816bd
   secret_scope: default
   secrets:
     contact_email: aircheck-contact-email
@@ -17,3 +18,5 @@ dev:
     max_retries: 3
     retry_backoff_base: 2
     request_timeout_sec: 30
+    sensor_type_filter: "SDS011"
+    country_filter: "UA,PL,DE"
