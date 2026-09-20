@@ -1,11 +1,9 @@
-from pathlib import Path
 from typing import Any
 
 import yaml
 
 
-def load_config(env: str) -> dict[str, Any]:
-    config_path = Path(__file__).resolve().parents[3] / "config" / "aircheck.yaml"
+def load_config(env: str, config_path: str) -> dict[str, Any]:
     with open(config_path, "r", encoding="utf-8") as f:
         full_cfg = yaml.safe_load(f)
     if env not in full_cfg:

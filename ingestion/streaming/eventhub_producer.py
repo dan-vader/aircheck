@@ -41,8 +41,10 @@ async def poll_cycle(
     )
 
 
-async def run(env: str, sensor_filter_override: str | None, shutdown_event: asyncio.Event) -> None:
-    cfg = load_config(env)
+async def run(
+    env: str, config_path: str, sensor_filter_override: str | None, shutdown_event: asyncio.Event
+) -> None:
+    cfg = load_config(env, config_path)
     secrets = await get_secrets(cfg)
     streaming_cfg = cfg["streaming"]
 
@@ -81,16 +83,21 @@ async def run(env: str, sensor_filter_override: str | None, shutdown_event: asyn
     log.info("shutdown signal received, producer stopped cleanly")
 
 
-async def main(env: str, sensor_filter_override: str | None) -> None:
+async def main(env: str, config_path: str, sensor_filter_override: str | None) -> None:
     shutdown_event = asyncio.Event()
     loop = asyncio.get_running_loop()
     install_signal_handlers(loop, shutdown_event)
-    await run(env, sensor_filter_override, shutdown_event)
+    await run(env, config_path, sensor_filter_override, shutdown_event)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--env", default="dev")
+    parser.add_argument(
+        "--config-path",
+        default="../../config/aircheck.yaml",
+        help="Path to aircheck.yaml, relative to the current working directory by default",
+    )
     parser.add_argument(
         "--sensor-filter",
         default=None,
@@ -99,6 +106,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        asyncio.run(main(args.env, args.sensor_filter))
+        asyncio.run(main(args.env, args.config_path, args.sensor_filter))
     except KeyboardInterrupt:
         log.info("producer stopped by user (KeyboardInterrupt)")
+        
