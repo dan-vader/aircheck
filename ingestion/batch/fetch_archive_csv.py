@@ -1,10 +1,12 @@
 # Databricks notebook source
 import os
 import re
+import time
 import yaml
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
 # COMMAND ----------
@@ -38,6 +40,10 @@ headers = {"User-Agent": f"databricks-lab-team (contact: {contact_email})"}
 batch_cfg = config["batch"]
 archive_base_url = batch_cfg["base_url"]
 file_limit = batch_cfg["file_limit"]
+sensor_filter = batch_cfg["sensor_type_filter"].lower()
+
+MAX_WORKERS = batch_cfg["max_workers"]
+REQ_TIMEOUT = batch_cfg["request_timeout"]
 
 # COMMAND ----------
 
@@ -48,9 +54,41 @@ retry_strategy = Retry(
     status_forcelist=[429, 500, 502, 503, 504],
     allowed_methods=["GET"],
 )
-adapter = HTTPAdapter(max_retries=retry_strategy)
+adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=MAX_WORKERS, pool_maxsize=MAX_WORKERS)
 session.mount("https://", adapter)
 session.mount("http://", adapter)
+
+# COMMAND ----------
+
+def download_single_file(file_name, day_url, volume_path, max_attempts=3):
+    dest_path = os.path.join(volume_path, file_name)
+
+    if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
+        return "skipped"
+
+    file_url = f"{day_url}{file_name}"
+
+    for attempt in range(1, max_attempts + 1):
+        try:
+            with session.get(file_url, headers=headers, stream=True, timeout=REQ_TIMEOUT) as file_response:
+                if file_response.status_code == 200:
+                    with open(dest_path, "wb") as file_handle:
+                        for chunk in file_response.iter_content(chunk_size=16384):
+                            if chunk:
+                                file_handle.write(chunk)
+                    return "downloaded"
+                elif file_response.status_code == 404:
+                    return "failed_404"
+                else:
+                    last_status = file_response.status_code
+        except Exception as file_err:
+            if os.path.exists(dest_path):
+                os.remove(dest_path)
+            if attempt == max_attempts:
+                return f"error: {str(file_err)}"
+            time.sleep(0.5 * attempt)
+            
+    return f"failed_{last_status}"
 
 # COMMAND ----------
 
@@ -60,23 +98,23 @@ if days_count < 1:
 
 for i in range(days_count):
     current_date = (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
+    day_url = f"{archive_base_url}{current_date}/"
 
     try:
-        day_url = f"{archive_base_url}{current_date}/"
-        response = session.get(day_url, headers=headers, timeout=30)
-
+        response = session.get(day_url, headers=headers, timeout=REQ_TIMEOUT)
         if response.status_code == 404:
             print(f"No archive for {current_date} (404).")
             continue
         response.raise_for_status()
 
         csv_files = re.findall(r'href="([^"]+\.csv)"', response.text)
+        csv_files = [f for f in csv_files if f"_{sensor_filter}_" in f.lower()]
         
         if file_limit:
             csv_files = csv_files[:file_limit]
 
         if not csv_files:
-            # No CSV files found for current_date
+            print(f"No matching files for {current_date} with filter '{sensor_filter}'.")
             continue
 
         volume_path = f"/Volumes/{catalog_name}/{bronze_schema}/{volume_name}/batch/archive/date={current_date}/"
@@ -84,31 +122,28 @@ for i in range(days_count):
 
         downloaded_count = 0
         skipped_count = 0
+        error_count = 0
 
-        for file_name in csv_files:
-            file_url = day_url + file_name
-            dest_path = os.path.join(volume_path, file_name)
+        print(f"Starting parallel download of {len(csv_files)} files for {current_date} ...")
 
-            if os.path.exists(dest_path) and os.path.getsize(dest_path) > 0:
-                skipped_count += 1
-                continue
+        with ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+            future_to_file = {
+                executor.submit(download_single_file, fname, day_url, volume_path): fname 
+                for fname in csv_files
+            }
 
-            try:
-                with session.get(file_url, headers=headers, stream=True, timeout=30) as file_response:
-                    if file_response.status_code == 200:
-                        with open(dest_path, "wb") as f:
-                            for chunk in file_response.iter_content(chunk_size=8192):
-                                if chunk:
-                                    f.write(chunk)
-                        downloaded_count += 1
-                    else:
-                        print(f"Failed to download {file_name}: {file_response.status_code}")
-                        pass
-            except Exception as file_err:
-                print(f"Error downloading {file_name}: {file_err}")
-                if os.path.exists(dest_path):
-                    os.remove(dest_path)
-        print(f"Done {current_date}: Downloaded {downloaded_count}, Skipped {skipped_count}.")
+            for future in as_completed(future_to_file):
+                res = future.result()
+                if res == "downloaded":
+                    downloaded_count += 1
+                elif res == "skipped":
+                    skipped_count += 1
+                else:
+                    error_count += 1
+                    file_name = future_to_file[future]
+                    print(f"Issue with {file_name}: {res}")
+            
+        print(f"Done {current_date}: Downloaded {downloaded_count}, Skipped {skipped_count}, Errors {error_count}.")
 
     except Exception as e:
         print(f"Error fetching data for {current_date}: {str(e)}")
