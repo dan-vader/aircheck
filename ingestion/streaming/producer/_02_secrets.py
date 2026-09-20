@@ -1,3 +1,4 @@
+import asyncio
 from typing import Any
 
 from azure.identity.aio import DefaultAzureCredential
@@ -12,7 +13,12 @@ async def get_secrets(cfg: dict[str, Any]) -> dict[str, str]:
 
     async with DefaultAzureCredential() as credential, \
             SecretClient(vault_url=vault_url, credential=credential) as client:
-        contact_email = (await client.get_secret(secret_keys["contact_email"])).value
-        eventhub_conn_str = (await client.get_secret(secret_keys["eventhub_conn_str"])).value
+        contact_email_secret, eventhub_conn_str_secret = await asyncio.gather(
+            client.get_secret(secret_keys["contact_email"]),
+            client.get_secret(secret_keys["eventhub_conn_str"]),
+        )
 
-    return {"contact_email": contact_email, "eventhub_conn_str": eventhub_conn_str}
+    return {
+        "contact_email": contact_email_secret.value,
+        "eventhub_conn_str": eventhub_conn_str_secret.value,
+    }
