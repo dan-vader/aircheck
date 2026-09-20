@@ -5,19 +5,19 @@ env = dbutils.widgets.get("env")
 dbutils.widgets.text("config_path", "../../config/aircheck.yaml")
 config_path = dbutils.widgets.get("config_path")
 
+dbutils.widgets.text("sensor_filter", "")
+sensor_filter_override = dbutils.widgets.get("sensor_filter")
+
 # COMMAND ----------
 
 import yaml
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType, MapType
+from pyspark.sql.types import StructType, StructField, StringType
 
 # COMMAND ----------
 
 with open(config_path, "r", encoding="utf-8") as f:
     full_cfg = yaml.safe_load(f)
-
-if env not in full_cfg:
-    raise KeyError(f"Environment '{env}' not found in {config_path}")
 cfg = full_cfg[env]
 
 catalog = cfg["catalog"]
@@ -30,9 +30,13 @@ eventhub_conn_str_key = cfg["secrets"]["eventhub_conn_str"]
 streaming_cfg = cfg["streaming"]
 checkpoint_path = streaming_cfg["checkpoint_path"]
 target_table = streaming_cfg["target_table"]
-max_offsets_per_trigger = streaming_cfg.get("max_offsets_per_trigger", 5000)
+max_offsets_per_trigger = streaming_cfg["max_offsets_per_trigger"]
+base_measurement_fields = streaming_cfg["base_measurement_fields"]
+phase_b_extra_fields = streaming_cfg["phase_b_extra_fields"]
 
 target_full_name = f"{catalog}.{bronze_schema}.{target_table}"
+
+sensor_filter = sensor_filter_override or streaming_cfg["sensor_type_filter"]
 
 # COMMAND ----------
 
@@ -53,7 +57,7 @@ kafka_options = {
 
 # COMMAND ----------
 
-schema = StructType([
+common_fields = [
     StructField("id", StringType()),
     StructField("timestamp", StringType()),
     StructField("sensor_id", StringType()),
@@ -62,8 +66,15 @@ schema = StructType([
     StructField("latitude", StringType()),
     StructField("longitude", StringType()),
     StructField("country", StringType()),
-    StructField("measurements", MapType(StringType(), StringType())),
-])
+]
+
+base_measurement_struct_fields = [StructField(f, StringType()) for f in base_measurement_fields]
+phase_b_struct_fields = [StructField(f, StringType()) for f in phase_b_extra_fields]
+
+schema_phase_a = StructType(common_fields + base_measurement_struct_fields)
+schema_phase_b = StructType(common_fields + base_measurement_struct_fields + phase_b_struct_fields)
+
+active_schema = schema_phase_b if "BME280" in sensor_filter.upper() else schema_phase_a
 
 # COMMAND ----------
 
@@ -75,7 +86,7 @@ parsed = (
         F.col("offset").cast("string").alias("_source_offset"),
         F.from_json(
             F.col("value").cast("string"),
-            schema,
+            active_schema,
             {"rescuedDataColumn": "_rescued_data"},
         ).alias("j"),
     )
@@ -89,6 +100,7 @@ parsed = (
 query = (
     parsed.writeStream
     .option("checkpointLocation", checkpoint_path)
+    .option("mergeSchema", "true")
     .outputMode("append")
     .queryName(f"aircheck_{target_table}")
     .trigger(processingTime="30 seconds")
