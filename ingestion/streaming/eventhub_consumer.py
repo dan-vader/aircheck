@@ -2,15 +2,16 @@
 dbutils.widgets.text("env", "dev")
 env = dbutils.widgets.get("env")
 
-dbutils.widgets.text("sensor_filter", "")
-sensor_filter_override = dbutils.widgets.get("sensor_filter")
+dbutils.widgets.text("config_path", "../../config/aircheck.yaml")
+config_path = dbutils.widgets.get("config_path")
+
+# COMMAND ----------
 
 import yaml
 from pyspark.sql import functions as F
-from pyspark.sql.types import StructType, StructField, StringType
+from pyspark.sql.types import StructType, StructField, StringType, MapType
 
-dbutils.widgets.text("config_path", "../../config/aircheck.yaml")
-config_path = dbutils.widgets.get("config_path")
+# COMMAND ----------
 
 with open(config_path, "r", encoding="utf-8") as f:
     full_cfg = yaml.safe_load(f)
@@ -30,7 +31,7 @@ max_offsets_per_trigger = streaming_cfg.get("max_offsets_per_trigger", 5000)
 
 target_full_name = f"{catalog}.{bronze_schema}.{target_table}"
 
-sensor_filter = sensor_filter_override or streaming_cfg["sensor_type_filter"]
+# COMMAND ----------
 
 eh_conn_str = dbutils.secrets.get(scope=secret_scope, key=eventhub_conn_str_key)
 
@@ -47,7 +48,9 @@ kafka_options = {
     "maxOffsetsPerTrigger": str(max_offsets_per_trigger),
 }
 
-schema_phase_a = StructType([
+# COMMAND ----------
+
+schema = StructType([
     StructField("id", StringType()),
     StructField("timestamp", StringType()),
     StructField("sensor_id", StringType()),
@@ -56,20 +59,10 @@ schema_phase_a = StructType([
     StructField("latitude", StringType()),
     StructField("longitude", StringType()),
     StructField("country", StringType()),
-    StructField("P1", StringType()),
-    StructField("P2", StringType()),
+    StructField("measurements", MapType(StringType(), StringType())),
 ])
 
-schema_phase_b = StructType(
-    schema_phase_a.fields
-    + [
-        StructField("temperature", StringType()),
-        StructField("humidity", StringType()),
-        StructField("pressure", StringType()),
-    ]
-)
-
-active_schema = schema_phase_b if "BME280" in sensor_filter.upper() else schema_phase_a
+# COMMAND ----------
 
 raw = spark.readStream.format("kafka").options(**kafka_options).load()
 
@@ -79,7 +72,7 @@ parsed = (
         F.col("offset").cast("string").alias("_source_offset"),
         F.from_json(
             F.col("value").cast("string"),
-            active_schema,
+            schema,
             {"rescuedDataColumn": "_rescued_data"},
         ).alias("j"),
     )
@@ -88,10 +81,11 @@ parsed = (
     .withColumn("_ingested_at", F.current_timestamp())
 )
 
+# COMMAND ----------
+
 query = (
     parsed.writeStream
     .option("checkpointLocation", checkpoint_path)
-    .option("mergeSchema", "true")
     .outputMode("append")
     .queryName(f"aircheck_{target_table}")
     .trigger(processingTime="30 seconds")
