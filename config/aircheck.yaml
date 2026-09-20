@@ -27,7 +27,7 @@ dev:
     phase_b_extra_fields: ["temperature", "humidity", "pressure"]
   batch:
     base_url: "https://archive.sensor.community/"
-    file_limit: 50
+    file_limit: null
     target_table: "sensor_archive_raw"
     landing_path: "archive"
     checkpoint_path: "_checkpoints/archive_bronze"
@@ -37,3 +37,6 @@ dev:
       - "sensor_id"
       - "timestamp"
     metadata_source: "sensor_archive"
+    sensor_type_filter: "SDS011"
+    max_workers: 16
+    request_timeout: 30
