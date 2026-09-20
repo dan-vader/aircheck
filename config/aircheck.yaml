@@ -29,6 +29,7 @@ dev:
     base_url: "https://archive.sensor.community/"
     file_limit: null
     target_table: "sensor_archive_raw"
+    registry_table: "device_registry_raw"
     landing_path: "archive"
     checkpoint_path: "_checkpoints/archive_bronze"
     schema_path: "_schemas/archive_bronze"
