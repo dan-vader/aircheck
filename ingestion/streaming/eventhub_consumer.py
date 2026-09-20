@@ -15,6 +15,9 @@ from pyspark.sql.types import StructType, StructField, StringType, MapType
 
 with open(config_path, "r", encoding="utf-8") as f:
     full_cfg = yaml.safe_load(f)
+
+if env not in full_cfg:
+    raise KeyError(f"Environment '{env}' not found in {config_path}")
 cfg = full_cfg[env]
 
 catalog = cfg["catalog"]
