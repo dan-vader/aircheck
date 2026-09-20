@@ -22,6 +22,9 @@ dev:
     country_filter: "UA,PL,DE"
     checkpoint_path: "/Volumes/dbr_dev_ua5816bd/aircheck_bronze/raw/_checkpoints/sensor_live"
     target_table: "sensor_live_raw"
+    max_offsets_per_trigger: 5000
+    base_measurement_fields: ["P1", "P2"]
+    phase_b_extra_fields: ["temperature", "humidity", "pressure"]
   batch:
     base_url: "https://archive.sensor.community/"
     file_limit: 50
