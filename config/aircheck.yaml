@@ -11,7 +11,7 @@ dev:
   secrets:
     contact_email: aircheck-contact-email
     eventhub_conn_str: aircheck-eventhub-conn-str
-  eventhub_namespace: evhua5816bd
+  eventhub_namespace: evhua5816bddemo
   eventhub_name: aircheck-sensor-readings
   streaming:
     poll_interval_sec: 90
