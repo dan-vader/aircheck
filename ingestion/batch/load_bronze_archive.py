@@ -29,9 +29,6 @@ batch_config = config["batch"]
 target_table_name = batch_config["target_table"]
 target_table = f"{catalog_name}.{bronze_schema}.{target_table_name}"
 
-registry_table_name = batch_config["registry_table"]
-registry_table = f"{catalog_name}.{bronze_schema}.{registry_table_name}"
-
 volume_root = f"/Volumes/{catalog_name}/{bronze_schema}/{volume_name}/batch"
 landing_base_path = f"{volume_root}/{batch_config['landing_path']}/"
 checkpoint_location = f"{volume_root}/{batch_config['checkpoint_path']}"
@@ -75,64 +72,3 @@ write_bronze_archive = (
 )
 
 write_bronze_archive.awaitTermination()
-
-# COMMAND ----------
-
-daily_landing_path = f"{landing_base_path}date={batch_date}/"
-
-spark.sql(f"""
-    CREATE TABLE IF NOT EXISTS {registry_table} (
-        sensor_id STRING,
-        sensor_type STRING,
-        location_id STRING,
-        lat STRING,
-        lon STRING,
-        indoor STRING,
-        _source STRING,
-        _source_file_name STRING,
-        _ingested_at TIMESTAMP
-    )
-""")
-
-# COMMAND ----------
-
-raw_csv_df = (
-    spark.read
-        .format("csv")
-        .option("header", "true")
-        .option("sep", csv_sep)
-        .load(daily_landing_path)
-)
-
-# COMMAND ----------
-
-df_devices = (
-    raw_csv_df
-        .filter(F.col("sensor_id").isNotNull())
-        .select(
-            F.col("sensor_id"),
-            F.col("sensor_type"),
-            F.col("location").alias("location_id"),
-            F.col("lat"),
-            F.col("lon"),
-            F.when(F.lower(F.col("_metadata.file_path")).contains("indoor"), "1")
-                .otherwise("0")
-                .alias("indoor")
-        )
-        .dropDuplicates(["sensor_id"])
-        .withColumn("_source", F.lit(metadata_source_name))
-        .withColumn("_source_file_name", F.col("_metadata.file_path"))
-        .withColumn("_ingested_at", F.current_timestamp())
-)
-
-# COMMAND ----------
-
-df_devices.createOrReplaceTempView("staging_devices")
-
-spark.sql(f"""
-    MERGE INTO {registry_table} t
-    USING staging_devices s
-        ON t.sensor_id = s.sensor_id
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-""")

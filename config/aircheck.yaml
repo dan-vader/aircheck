@@ -41,3 +41,10 @@ dev:
     sensor_type_filter: "SDS011"
     max_workers: 16
     request_timeout: 30
+    registry:
+      api_base_url: "https://data.sensor.community/airrohr/v1/filter/country="
+      source_name: "sensor.community_live_api"
+      source_file_name: "api_response"
+      countries: ["UA", "PL", "DE", "NL", "AT", "CH", "CZ", "FR", "BE"]
+      allowed_sensors: ["SDS011", "BME280"]
+      request_timeout: 60
