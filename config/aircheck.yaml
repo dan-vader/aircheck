@@ -38,7 +38,6 @@ dev:
       - "sensor_id"
       - "timestamp"
     metadata_source: "sensor_archive"
-    sensor_type_filter: "SDS011"
     max_workers: 16
     request_timeout: 30
     registry:

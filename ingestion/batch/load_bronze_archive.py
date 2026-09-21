@@ -5,8 +5,6 @@ import yaml
 
 # COMMAND ----------
 
-default_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
-
 dbutils.widgets.text("env", "dev", "1. Environment")
 env = dbutils.widgets.get("env")
 

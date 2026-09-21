@@ -45,10 +45,10 @@ MAX_WORKERS = batch_cfg["max_workers"]
 REQ_TIMEOUT = batch_cfg["request_timeout"]
 
 registry_cfg = batch_cfg["registry"]
-COUNTRIES = registry_cfg["countries"]
+registry_table_name = batch_cfg["registry_table"]
+registry_table = f"{catalog_name}.{bronze_schema}.{registry_table_name}"
 ALLOWED_SENSORS = registry_cfg["allowed_sensors"]
 allowed_sensors_lower = [s.lower() for s in ALLOWED_SENSORS]
-LIVE_API_BASE = registry_cfg["api_base_url"]
 
 # COMMAND ----------
 
@@ -65,30 +65,16 @@ session.mount("http://", adapter)
 
 # COMMAND ----------
 
-known_sensor_ids = set()
-
-url = f"{LIVE_API_BASE}{','.join(COUNTRIES)}"
-api_timeout = registry_cfg.get("request_timeout",60)
-
 try:
-    resp = session.get(url, headers=headers, timeout=api_timeout)
-    resp.raise_for_status()
-    records = resp.json()
-
-    for rec in records:
-        sensor_info = rec.get("sensor", {})
-        s_id = str(sensor_info.get("id"))
-        s_type = sensor_info.get("sensor_type", {}).get("name")
-        
-        if s_id and s_type in ALLOWED_SENSORS:
-            known_sensor_ids.add(s_id)
-    
-    del records
+    known_sensor_ids = {
+        str(row["sensor_id"]) for row in
+        spark.table(registry_table).select("sensor_id").distinct().collect()
+    }
 except Exception as e:
-    raise ValueError(f"Live API request error: {e}")
+    raise ValueError(f"Failed to read from {registry_table}. Ensure build_device_registry has been run. Error: {e}")
 
 if not known_sensor_ids:
-    raise ValueError("No sensors in allowed countries")
+    raise ValueError(f"No sensors found in {registry_table}")
 
 # COMMAND ----------
 
