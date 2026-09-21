@@ -109,4 +109,3 @@ if __name__ == "__main__":
         asyncio.run(main(args.env, args.config_path, args.sensor_filter))
     except KeyboardInterrupt:
         log.info("producer stopped by user (KeyboardInterrupt)")
-        

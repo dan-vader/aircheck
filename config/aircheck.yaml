@@ -9,8 +9,8 @@ dev:
   key_vault_name: kvua5816bd
   secret_scope: default
   secrets:
-     contact_email: aircheck-contact-email
-     eventhub_conn_str: aircheck-eventhub-conn-str
+    contact_email: aircheck-contact-email
+    eventhub_conn_str: aircheck-eventhub-conn-str
   eventhub_namespace: evhua5816bddemo
   eventhub_name: aircheck-sensor-readings
   streaming:
@@ -20,3 +20,20 @@ dev:
     request_timeout_sec: 30
     sensor_type_filter: "SDS011"
     country_filter: "UA,PL,DE"
+    checkpoint_path: "/Volumes/dbr_dev_ua5816bd/aircheck_bronze/raw/_checkpoints/sensor_live"
+    target_table: "sensor_live_raw"
+    max_offsets_per_trigger: 5000
+    base_measurement_fields: ["P1", "P2"]
+    phase_b_extra_fields: ["temperature", "humidity", "pressure"]
+  batch:
+    base_url: "https://archive.sensor.community/"
+    file_limit: 50
+    target_table: "sensor_archive_raw"
+    landing_path: "archive"
+    checkpoint_path: "_checkpoints/archive_bronze"
+    schema_path: "_schemas/archive_bronze"
+    csv_delimiter: ";"
+    natural_keys:
+      - "sensor_id"
+      - "timestamp"
+    metadata_source: "sensor_archive"
