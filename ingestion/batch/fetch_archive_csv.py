@@ -40,10 +40,15 @@ headers = {"User-Agent": f"databricks-lab-team (contact: {contact_email})"}
 batch_cfg = config["batch"]
 archive_base_url = batch_cfg["base_url"]
 file_limit = batch_cfg["file_limit"]
-sensor_filter = batch_cfg["sensor_type_filter"].lower()
 
 MAX_WORKERS = batch_cfg["max_workers"]
 REQ_TIMEOUT = batch_cfg["request_timeout"]
+
+registry_cfg = batch_cfg["registry"]
+COUNTRIES = registry_cfg["countries"]
+ALLOWED_SENSORS = registry_cfg["allowed_sensors"]
+allowed_sensors_lower = [s.lower() for s in ALLOWED_SENSORS]
+LIVE_API_BASE = registry_cfg["api_base_url"]
 
 # COMMAND ----------
 
@@ -57,6 +62,33 @@ retry_strategy = Retry(
 adapter = HTTPAdapter(max_retries=retry_strategy, pool_connections=MAX_WORKERS, pool_maxsize=MAX_WORKERS)
 session.mount("https://", adapter)
 session.mount("http://", adapter)
+
+# COMMAND ----------
+
+known_sensor_ids = set()
+
+url = f"{LIVE_API_BASE}{','.join(COUNTRIES)}"
+api_timeout = registry_cfg.get("request_timeout",60)
+
+try:
+    resp = session.get(url, headers=headers, timeout=api_timeout)
+    resp.raise_for_status()
+    records = resp.json()
+
+    for rec in records:
+        sensor_info = rec.get("sensor", {})
+        s_id = str(sensor_info.get("id"))
+        s_type = sensor_info.get("sensor_type", {}).get("name")
+        
+        if s_id and s_type in ALLOWED_SENSORS:
+            known_sensor_ids.add(s_id)
+    
+    del records
+except Exception as e:
+    raise ValueError(f"Live API request error: {e}")
+
+if not known_sensor_ids:
+    raise ValueError("No sensors in allowed countries")
 
 # COMMAND ----------
 
@@ -108,13 +140,24 @@ for i in range(days_count):
         response.raise_for_status()
 
         csv_files = re.findall(r'href="([^"]+\.csv)"', response.text)
-        csv_files = [f for f in csv_files if f"_{sensor_filter}_" in f.lower()]
+        csv_files = [
+            f for f in csv_files 
+            if any(f"_{s_type}_" in f.lower() for s_type in allowed_sensors_lower)
+        ]
+
+        filtered_files = []
+        for f in csv_files:
+            match = re.search(r'_sensor_(\d+)\.csv', f)
+            if match and match.group(1) in known_sensor_ids:
+                filtered_files.append(f)
+
+        csv_files = filtered_files
         
         if file_limit:
             csv_files = csv_files[:file_limit]
 
         if not csv_files:
-            print(f"No matching files for {current_date} with filter '{sensor_filter}'.")
+            print(f"No matching files for {current_date} with filters '{ALLOWED_SENSORS}'.")
             continue
 
         volume_path = f"/Volumes/{catalog_name}/{bronze_schema}/{volume_name}/batch/archive/date={current_date}/"

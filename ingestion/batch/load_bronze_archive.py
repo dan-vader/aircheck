@@ -8,10 +8,7 @@ import yaml
 default_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
 
 dbutils.widgets.text("env", "dev", "1. Environment")
-dbutils.widgets.text("batch_date", default_date, "2. Batch Date (YYYY-MM-DD)")
-
 env = dbutils.widgets.get("env")
-batch_date = dbutils.widgets.get("batch_date")
 
 # COMMAND ----------
 
@@ -36,6 +33,10 @@ schema_location = f"{volume_root}/{batch_config['schema_path']}"
 
 csv_sep = batch_config["csv_delimiter"]
 metadata_source_name = batch_config["metadata_source"]
+
+# COMMAND ----------
+
+spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", 10000)
 
 # COMMAND ----------
 
