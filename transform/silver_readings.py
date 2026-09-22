@@ -86,6 +86,11 @@ readings_silver = (
         .withColumn("longitude", F.col("longitude").cast("double"))
         .withColumn("country", F.upper(F.col("country")))
         .dropDuplicates(["sensor_id", "event_ts_utc", "value_type"])
+        .filter(F.col("value").isNotNull() & ~F.isnan(F.col("value")))
+        .filter(
+            (~F.isnan(F.col("latitude")) | F.col("latitude").isNull()) &
+            (~F.isnan(F.col("longitude")) | F.col("longitude").isNull())
+        )
         .select(
             "sensor_id",
             "event_ts_utc",
