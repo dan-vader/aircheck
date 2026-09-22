@@ -47,3 +47,4 @@ dev:
       countries: ["UA", "PL", "DE", "NL", "AT", "CH", "CZ", "FR", "BE"]
       allowed_sensors: ["SDS011", "BME280"]
       request_timeout: 60
+    target_metrics: ["P1", "P2", "temperature", "humidity", "pressure"]

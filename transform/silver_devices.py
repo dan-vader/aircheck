@@ -22,8 +22,10 @@ silver_schema = config["schemas"]["silver"]
 live_raw_table_name = config["streaming"]["target_table"]
 live_raw_table = f"{catalog_name}.{bronze_schema}.{live_raw_table_name}"
 
-registry_raw_table = f"{catalog_name}.{bronze_schema}.device_registry_raw"  # get from config after fetch
-devices_silver_table = f"{catalog_name}.{silver_schema}.devices"    # get from config after fetch
+registry_raw_table_name = config["batch"]["registry_table"]
+registry_raw_table = f"{catalog_name}.{bronze_schema}.{registry_raw_table_name}"
+
+devices_silver_table = f"{catalog_name}.{silver_schema}.devices"
 
 # COMMAND ----------
 
@@ -34,6 +36,7 @@ window_spec = Window.partitionBy("sensor_id").orderBy(F.col("timestamp").desc())
 
 df_live_latest = (
     df_live
+        .filter(F.col("sensor_id").isNotNull())
         .withColumn("row_num", F.row_number().over(window_spec))
         .filter(F.col("row_num") == 1)
         .select(
@@ -76,6 +79,8 @@ df_updates = (
 df_updates.createOrReplaceTempView("stage_devices_updates_view")
 
 # COMMAND ----------
+
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{silver_schema}")
 
 spark.sql(f"""
     CREATE TABLE IF NOT EXISTS {devices_silver_table} (

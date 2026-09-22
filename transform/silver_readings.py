@@ -19,14 +19,17 @@ catalog_name = config["catalog"]
 bronze_schema = config["schemas"]["bronze"]
 silver_schema = config["schemas"]["silver"]
 
-# take them from CONFIG after fetch
-archive_raw_table = f"{catalog_name}.{bronze_schema}.sensor_archive_raw"
-live_raw_table = f"{catalog_name}.{bronze_schema}.sensor_live_raw"
+archive_raw_table_name = config["batch"]["target_table"]
+archive_raw_table = f"{catalog_name}.{bronze_schema}.{archive_raw_table_name}"
+
+live_raw_table_name = config["streaming"]["target_table"]
+live_raw_table = f"{catalog_name}.{bronze_schema}.{live_raw_table_name}"
+
 readings_silver_table = f"{catalog_name}.{silver_schema}.readings"
 
 # COMMAND ----------
 
-METRICS = ["P1", "P2", "temperature", "humidity", "pressure"]
+METRICS = config["batch"]["target_metrics"]
 ID_COLS = [
     "sensor_id", "timestamp", "location_id", 
     "latitude", "longitude", "country", "_source", "_ingested_at"
@@ -96,6 +99,8 @@ readings_silver = (
 )
 
 # COMMAND ----------
+
+spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{silver_schema}")
 
 (
     readings_silver.write
