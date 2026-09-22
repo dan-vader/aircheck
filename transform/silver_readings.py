@@ -63,6 +63,8 @@ df_archive_clean = (
         .withColumnRenamed("location", "location_id")
         .withColumnRenamed("lat", "latitude")
         .withColumnRenamed("lon", "longitude")
+        # Archive data lacks country info. Set to NULL here.
+        # The Gold layer must JOIN with silver.devices to resolve the actual country.
         .withColumn("country", F.lit(None).cast("string"))
 )
 
