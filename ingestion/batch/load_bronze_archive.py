@@ -4,7 +4,7 @@ import yaml
 
 # COMMAND ----------
 
-dbutils.widgets.text("env", "dev", "Environment")
+dbutils.widgets.text("env", "dev", "1. Environment")
 env = dbutils.widgets.get("env")
 
 # COMMAND ----------
@@ -30,6 +30,10 @@ schema_location = f"{volume_root}/{batch_config['schema_path']}"
 
 csv_sep = batch_config["csv_delimiter"]
 metadata_source_name = batch_config["metadata_source"]
+
+# COMMAND ----------
+
+spark.conf.set("spark.databricks.cloudFiles.schemaInference.sampleSize.numFiles", 10000)
 
 # COMMAND ----------
 
