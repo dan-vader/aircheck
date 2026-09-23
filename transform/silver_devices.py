@@ -3,6 +3,8 @@ from pyspark.sql import functions as F
 from pyspark.sql.window import Window
 import yaml
 
+from common.logging_utils import get_logger, new_batch_id, log_run, log_error
+
 # COMMAND ----------
 
 dbutils.widgets.text("env", "dev", "1. Environment")
@@ -18,6 +20,14 @@ config = full_config[env]
 catalog_name = config["catalog"]
 bronze_schema = config["schemas"]["bronze"]
 silver_schema = config["schemas"]["silver"]
+ops_schema = config["schemas"]["ops"]
+
+JOB_NAME = "silver.devices"
+log = get_logger(JOB_NAME)
+batch_id = new_batch_id()
+log.info("start")
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO", message="start")
 
 live_raw_table_name = config["streaming"]["target_table"]
 live_raw_table = f"{catalog_name}.{bronze_schema}.{live_raw_table_name}"
@@ -99,10 +109,23 @@ spark.sql(f"""
 
 # COMMAND ----------
 
-spark.sql(f"""
-    MERGE INTO {devices_silver_table} t
-    USING stage_devices_updates_view s
-        ON t.sensor_id = s.sensor_id
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-""")
+try:
+    n = df_updates.count()
+    spark.sql(f"""
+        MERGE INTO {devices_silver_table} t
+        USING stage_devices_updates_view s
+            ON t.sensor_id = s.sensor_id
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+except Exception as e:
+    log.error("silver.devices merge failed: %s", e)
+    log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+              batch_id=batch_id, message="silver.devices merge failed", exc=e,
+              table=devices_silver_table)
+    raise
+
+log.info("done rows=%d", n)
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO", message="done",
+        rows_affected=n, table=devices_silver_table)

@@ -3,6 +3,8 @@ from pyspark.sql import functions as F
 from pyspark.sql import DataFrame
 import yaml
 
+from common.logging_utils import get_logger, new_batch_id, log_run, log_error
+
 # COMMAND ----------
 
 dbutils.widgets.text("env", "dev", "1. Environment")
@@ -18,6 +20,14 @@ config = full_config[env]
 catalog_name = config["catalog"]
 bronze_schema = config["schemas"]["bronze"]
 silver_schema = config["schemas"]["silver"]
+ops_schema = config["schemas"]["ops"]
+
+JOB_NAME = "silver.readings"
+log = get_logger(JOB_NAME)
+batch_id = new_batch_id()
+log.info("start")
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO", message="start")
 
 archive_raw_table_name = config["batch"]["target_table"]
 archive_raw_table = f"{catalog_name}.{bronze_schema}.{archive_raw_table_name}"
@@ -109,10 +119,25 @@ readings_silver = (
 
 spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{silver_schema}")
 
-(
-    readings_silver.write
-        .format("delta")
-        .mode("overwrite")
-        .option("mergeSchema", "true")
-        .saveAsTable(readings_silver_table)
-)
+try:
+    readings_silver.cache()
+    n = readings_silver.count()
+
+    (
+        readings_silver.write
+            .format("delta")
+            .mode("overwrite")
+            .option("mergeSchema", "true")
+            .saveAsTable(readings_silver_table)
+    )
+except Exception as e:
+    log.error("silver.readings write failed: %s", e)
+    log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+              batch_id=batch_id, message="silver.readings write failed", exc=e,
+              table=readings_silver_table)
+    raise
+
+log.info("done rows=%d", n)
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO", message="done",
+        rows_affected=n, table=readings_silver_table)
