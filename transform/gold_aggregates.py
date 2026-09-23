@@ -1,6 +1,8 @@
 # Databricks notebook source
 import yaml
 
+from common.logging_utils import get_logger, new_batch_id, log_run, log_error
+
 # COMMAND ----------
 
 dbutils.widgets.text("env", "dev", "1. Environment")
@@ -16,6 +18,31 @@ config = full_config[env]
 catalog_name = config["catalog"]
 silver_schema = config["schemas"]["silver"]
 gold_schema = config["schemas"]["gold"]
+ops_schema = config["schemas"]["ops"]
+
+JOB_NAME = "gold.aggregates"
+log = get_logger(JOB_NAME)
+batch_id = new_batch_id()
+log.info("start")
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO", message="start")
+
+
+def run_table(name: str, sql: str) -> None:
+    """Run one CREATE OR REPLACE TABLE statement, log rows and errors."""
+    full_name = f"{catalog_name}.{gold_schema}.{name}"
+    try:
+        spark.sql(sql)
+        n = spark.table(full_name).count()
+    except Exception as e:
+        log.error("%s failed: %s", name, e)
+        log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+                  batch_id=batch_id, message=f"{name} build failed", exc=e, table=full_name)
+        raise
+    log.info("%s done rows=%d", name, n)
+    log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+            batch_id=batch_id, level="INFO", message=f"{name} done",
+            rows_affected=n, table=full_name)
 
 # COMMAND ----------
 
@@ -23,7 +50,7 @@ spark.sql(f"CREATE SCHEMA IF NOT EXISTS {catalog_name}.{gold_schema}")
 
 # COMMAND ----------
 
-spark.sql(f"""
+run_table("air_quality_hourly", f"""
     CREATE OR REPLACE TABLE {catalog_name}.{gold_schema}.air_quality_hourly AS
     SELECT d.country
         , DATE_TRUNC('hour', r.event_ts_utc) AS hour
@@ -42,7 +69,7 @@ spark.sql(f"""
 
 # COMMAND ----------
 
-spark.sql(f"""
+run_table("air_quality_daily_by_country", f"""
     CREATE OR REPLACE TABLE {catalog_name}.{gold_schema}.air_quality_daily_by_country AS
     SELECT d.country
         , DATE(r.event_ts_utc) AS day
@@ -59,7 +86,7 @@ spark.sql(f"""
 
 # COMMAND ----------
 
-spark.sql(f"""
+run_table("sensor_network_health", f"""
     CREATE OR REPLACE TABLE {catalog_name}.{gold_schema}.sensor_network_health AS
     SELECT d.country
         , COUNT(DISTINCT r.sensor_id)  AS active_sensors
@@ -72,7 +99,7 @@ spark.sql(f"""
 
 # COMMAND ----------
 
-spark.sql(f"""
+run_table("anomalies", f"""
     CREATE OR REPLACE TABLE {catalog_name}.{gold_schema}.anomalies AS
     SELECT r.sensor_id
         , r.event_ts_utc
