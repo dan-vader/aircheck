@@ -9,6 +9,8 @@ from urllib3.util.retry import Retry
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from datetime import datetime, timedelta
 
+from common.logging_utils import get_logger, new_batch_id, log_run, log_error
+
 # COMMAND ----------
 
 default_date = (datetime.now() - timedelta(days=1)).strftime("%Y-%m-%d")
@@ -30,12 +32,17 @@ with open(CONFIG_PATH, "r") as f:
 config = full_config[env]
 catalog_name = config["catalog"]
 bronze_schema = config["schemas"]["bronze"]
+ops_schema = config["schemas"]["ops"]
 volume_name = config["volume"]
 secret_scope = config["secret_scope"]
 contact_email_key = config["secrets"]["contact_email"]
 
 contact_email = dbutils.secrets.get(secret_scope, contact_email_key)
 headers = {"User-Agent": f"databricks-lab-team (contact: {contact_email})"}
+
+JOB_NAME = "batch.fetch_archive"
+log = get_logger(JOB_NAME)
+batch_id = new_batch_id()
 
 batch_cfg = config["batch"]
 archive_base_url = batch_cfg["base_url"]
@@ -71,10 +78,19 @@ try:
         spark.table(registry_table).select("sensor_id").distinct().collect()
     }
 except Exception as e:
+    log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+              batch_id=batch_id, message=f"failed to read {registry_table}", exc=e)
     raise ValueError(f"Failed to read from {registry_table}. Ensure build_device_registry has been run. Error: {e}")
 
 if not known_sensor_ids:
+    log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+              batch_id=batch_id, message=f"no sensors found in {registry_table}")
     raise ValueError(f"No sensors found in {registry_table}")
+
+log.info("start dates=%s..%s known_sensors=%d", start_date.date(), end_date.date(), len(known_sensor_ids))
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO",
+        message=f"start dates={start_date.date()}..{end_date.date()} known_sensors={len(known_sensor_ids)}")
 
 # COMMAND ----------
 
@@ -113,6 +129,10 @@ def download_single_file(file_name, day_url, volume_path, max_attempts=3):
 days_count = (end_date - start_date).days + 1
 if days_count < 1:
     raise ValueError("end_date cannot be before start_date")
+
+total_downloaded = 0
+total_skipped = 0
+total_errors = 0
 
 for i in range(days_count):
     current_date = (start_date + timedelta(days=i)).strftime("%Y-%m-%d")
@@ -173,7 +193,18 @@ for i in range(days_count):
                     print(f"Issue with {file_name}: {res}")
             
         print(f"Done {current_date}: Downloaded {downloaded_count}, Skipped {skipped_count}, Errors {error_count}.")
+        total_downloaded += downloaded_count
+        total_skipped += skipped_count
+        total_errors += error_count
 
     except Exception as e:
         print(f"Error fetching data for {current_date}: {str(e)}")
+        log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+                  batch_id=batch_id, message=f"fetch failed for date={current_date}", exc=e)
         raise e
+
+log.info("done downloaded=%d skipped=%d errors=%d", total_downloaded, total_skipped, total_errors)
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO" if total_errors == 0 else "WARN",
+        message=f"done downloaded={total_downloaded} skipped={total_skipped} errors={total_errors}",
+        rows_affected=total_downloaded)
