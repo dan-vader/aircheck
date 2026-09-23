@@ -34,7 +34,7 @@ spark.sql(f"""
         , COUNT(*) AS n_readings
     FROM {catalog_name}.{silver_schema}.readings r
     JOIN {catalog_name}.{silver_schema}.devices d ON r.sensor_id = d.sensor_id
-    WHERE d.indoor = FALSE OR d.indoor IS NULL
+    WHERE (d.indoor = FALSE OR d.indoor IS NULL)
     GROUP BY d.country
         , DATE_TRUNC('hour', r.event_ts_utc)
         , r.value_type
@@ -51,7 +51,7 @@ spark.sql(f"""
         , COUNT(*) AS n_readings
     FROM {catalog_name}.{silver_schema}.readings r
     JOIN {catalog_name}.{silver_schema}.devices d ON r.sensor_id = d.sensor_id
-    WHERE d.indoor = FALSE OR d.indoor IS NULL
+    WHERE (d.indoor = FALSE OR d.indoor IS NULL)
     GROUP BY d.country
         , DATE(r.event_ts_utc)
         , r.value_type
@@ -79,15 +79,17 @@ spark.sql(f"""
         , r.value_type
         , r.value
         , r.location_id
-        , COALESCE(r.country, d.country) AS country
-        , d.indoor
+        /* Prioritize dimension country (d.country), falling back to 
+           event country (r.country) for unregistered yet sensors */
+        , COALESCE(d.country, r.country) AS country
         , CASE
             WHEN r.value_type = 'P1' AND r.value > 50 THEN 'PM10_EXCEEDS_WHO_DAILY'
             WHEN r.value_type = 'P2' AND r.value > 25 THEN 'PM2_5_EXCEEDS_WHO_DAILY'
             ELSE NULL
         END AS anomaly_flag
     FROM {catalog_name}.{silver_schema}.readings r
-    JOIN {catalog_name}.{silver_schema}.devices d ON r.sensor_id = d.sensor_id
+    LEFT JOIN {catalog_name}.{silver_schema}.devices d ON r.sensor_id = d.sensor_id
     WHERE r.value_type IN ('P1', 'P2')
         AND r.value IS NOT NULL
+        AND (d.indoor = FALSE OR d.indoor IS NULL)
 """)
