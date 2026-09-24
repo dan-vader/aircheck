@@ -83,7 +83,7 @@ try:
 
     write_bronze_archive.awaitTermination()
 
-    rows_processed = sum(p.get("numInputRows", 0) for p in write_bronze_archive.recentProgress)
+    rows_processed = sum((p.get("numInputRows") or 0) for p in write_bronze_archive.recentProgress)
 except Exception as e:
     log.error("Auto Loader run failed: %s", e)
     log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,

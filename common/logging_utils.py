@@ -35,7 +35,18 @@ import traceback
 import uuid
 from datetime import datetime, timezone
 
-from pyspark.sql import Row
+from pyspark.sql.types import StructType, StructField, StringType, LongType, TimestampType
+
+# Explicit schema because createDataFrame() can't infer types when rows_affected/table are None.
+_LOG_SCHEMA = StructType([
+    StructField("job_name", StringType(), True),
+    StructField("batch_id", StringType(), True),
+    StructField("level", StringType(), True),
+    StructField("message", StringType(), True),
+    StructField("rows_affected", LongType(), True),
+    StructField("target_table", StringType(), True),
+    StructField("logged_at", TimestampType(), True),
+])
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -66,18 +77,19 @@ def log_run(
     table: str | None = None,
 ) -> None:
     """Append one structured row to <catalog>.<ops_schema>.pipeline_log."""
-    row = Row(
-        job_name=job_name,
-        batch_id=batch_id,
-        level=level,
-        message=message,
-        rows_affected=rows_affected,
-        target_table=table,
-        logged_at=datetime.now(timezone.utc),
-    )
+    # dict, not Row because Row(**kwargs) reorders fields alphabetically and would misalign with _LOG_SCHEMA.
+    data = {
+        "job_name": job_name,
+        "batch_id": batch_id,
+        "level": level,
+        "message": message,
+        "rows_affected": int(rows_affected) if rows_affected is not None else None,
+        "target_table": table,
+        "logged_at": datetime.now(timezone.utc),
+    }
     try:
         (
-            spark.createDataFrame([row])
+            spark.createDataFrame([data], schema=_LOG_SCHEMA)
             .write.mode("append")
             .saveAsTable(f"{catalog}.{ops_schema}.pipeline_log")
         )
