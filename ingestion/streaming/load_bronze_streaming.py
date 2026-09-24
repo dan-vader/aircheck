@@ -28,7 +28,7 @@ ops_schema = cfg["schemas"]["ops"]
 
 JOB_NAME = "stream.bronze"
 log = get_logger(JOB_NAME)
-run_batch_id = new_batch_id()  # one id per query start; each microbatch logs a separate row under it
+run_batch_id = new_batch_id() 
 eventhub_namespace = cfg["eventhub_namespace"]
 eventhub_name = cfg["eventhub_name"]
 secret_scope = cfg["secret_scope"]
@@ -111,7 +111,7 @@ log_run(spark, catalog=catalog, ops_schema=ops_schema, job_name=JOB_NAME,
         message=f"stream starting, schema={'phase_b' if active_schema is schema_phase_b else 'phase_a'}",
         table=target_table)
 
-_last_known_columns = None  # tracks column set across microbatches, to catch schema evolution
+_last_known_columns = None 
 
 
 def write_microbatch(microbatch_df, microbatch_id: int) -> None:
