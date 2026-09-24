@@ -14,6 +14,8 @@ import yaml
 from pyspark.sql import functions as F
 from pyspark.sql.types import StructType, StructField, StringType
 
+from common.logging_utils import get_logger, new_batch_id, log_run, log_error
+
 # COMMAND ----------
 
 with open(config_path, "r", encoding="utf-8") as f:
@@ -22,6 +24,11 @@ cfg = full_cfg[env]
 
 catalog = cfg["catalog"]
 bronze_schema = cfg["schemas"]["bronze"]
+ops_schema = cfg["schemas"]["ops"]
+
+JOB_NAME = "stream.bronze"
+log = get_logger(JOB_NAME)
+run_batch_id = new_batch_id()  # one id per query start; each microbatch logs a separate row under it
 eventhub_namespace = cfg["eventhub_namespace"]
 eventhub_name = cfg["eventhub_name"]
 secret_scope = cfg["secret_scope"]
@@ -97,14 +104,69 @@ parsed = (
 
 # COMMAND ----------
 
+log.info("start target=%s schema=%s", target_full_name,
+         "phase_b" if active_schema is schema_phase_b else "phase_a")
+log_run(spark, catalog=catalog, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=run_batch_id, level="INFO",
+        message=f"stream starting, schema={'phase_b' if active_schema is schema_phase_b else 'phase_a'}",
+        table=target_table)
+
+_last_known_columns = None  # tracks column set across microbatches, to catch schema evolution
+
+
+def write_microbatch(microbatch_df, microbatch_id: int) -> None:
+    global _last_known_columns
+    try:
+        count = microbatch_df.count()
+        if count == 0:
+            return
+
+        current_columns = set(microbatch_df.columns)
+        if _last_known_columns is not None and current_columns != _last_known_columns:
+            new_cols = current_columns - _last_known_columns
+            log.warning("schema change detected in microbatch %d: new columns=%s",
+                        microbatch_id, sorted(new_cols))
+            log_run(spark, catalog=catalog, ops_schema=ops_schema, job_name=JOB_NAME,
+                    batch_id=run_batch_id, level="WARN",
+                    message=f"schema change detected, new columns={sorted(new_cols)}",
+                    table=target_table)
+        _last_known_columns = current_columns
+
+        (
+            microbatch_df.write
+            .format("delta")
+            .mode("append")
+            .option("mergeSchema", "true")
+            .saveAsTable(target_full_name)
+        )
+
+        log.info("microbatch %d written rows=%d", microbatch_id, count)
+        log_run(spark, catalog=catalog, ops_schema=ops_schema, job_name=JOB_NAME,
+                batch_id=run_batch_id, level="INFO",
+                message=f"microbatch {microbatch_id} written",
+                rows_affected=count, table=target_table)
+    except Exception as e:
+        log.error("microbatch %d failed: %s", microbatch_id, e)
+        log_error(spark, catalog=catalog, ops_schema=ops_schema, job_name=JOB_NAME,
+                  batch_id=run_batch_id, message=f"microbatch {microbatch_id} failed", exc=e,
+                  table=target_table)
+        raise
+
+
 query = (
     parsed.writeStream
     .option("checkpointLocation", checkpoint_path)
-    .option("mergeSchema", "true")
     .outputMode("append")
     .queryName(f"aircheck_{target_table}")
     .trigger(processingTime="30 seconds")
-    .toTable(target_full_name)
+    .foreachBatch(write_microbatch)
+    .start()
 )
 
-query.awaitTermination()
+try:
+    query.awaitTermination()
+except Exception as e:
+    log_error(spark, catalog=catalog, ops_schema=ops_schema, job_name=JOB_NAME,
+              batch_id=run_batch_id, message="stream terminated with error", exc=e,
+              table=target_table)
+    raise

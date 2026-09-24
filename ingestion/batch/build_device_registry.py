@@ -3,6 +3,8 @@ from pyspark.sql import functions as F
 import requests
 import yaml
 
+from common.logging_utils import get_logger, new_batch_id, log_run, log_error
+
 # COMMAND ----------
 
 dbutils.widgets.text("env", "dev", "1. Environment")
@@ -23,6 +25,7 @@ headers = {"User-Agent": f"databricks-lab-team (contact: {contact_email})"}
 batch_config = config["batch"]
 catalog_name = config["catalog"]
 bronze_schema = config["schemas"]["bronze"]
+ops_schema = config["schemas"]["ops"]
 registry_table_name = batch_config["registry_table"]
 registry_table = f"{catalog_name}.{bronze_schema}.{registry_table_name}"
 
@@ -34,12 +37,27 @@ source_file_name = registry_config["source_file_name"]
 timeout_sec = registry_config["request_timeout"]
 base_url = registry_config["api_base_url"]
 
+JOB_NAME = "batch.device_registry"
+log = get_logger(JOB_NAME)
+batch_id = new_batch_id()
+
+log.info("start env=%s countries=%s", env, COUNTRIES)
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO", message=f"start env={env} countries={COUNTRIES}")
+
 # COMMAND ----------
 
-url = f"{base_url}{','.join(COUNTRIES)}"
-response = requests.get(url, headers=headers, timeout=timeout_sec)
-response.raise_for_status()
-records = response.json()
+try:
+    url = f"{base_url}{','.join(COUNTRIES)}"
+    response = requests.get(url, headers=headers, timeout=timeout_sec)
+    response.raise_for_status()
+    records = response.json()
+except Exception as e:
+    log.error("failed to fetch live API: %s", e)
+    log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+              batch_id=batch_id, message="failed to fetch live API", exc=e,
+              table=registry_table_name)
+    raise
 
 # COMMAND ----------
 
@@ -102,10 +120,23 @@ spark.sql(f"""
 
 df_staging.createOrReplaceTempView("api_staging_devices")
 
-spark.sql(f"""
-    MERGE INTO {registry_table} t
-    USING api_staging_devices s
-        ON t.sensor_id = s.sensor_id
-    WHEN MATCHED THEN UPDATE SET *
-    WHEN NOT MATCHED THEN INSERT *
-""")
+try:
+    spark.sql(f"""
+        MERGE INTO {registry_table} t
+        USING api_staging_devices s
+            ON t.sensor_id = s.sensor_id
+        WHEN MATCHED THEN UPDATE SET *
+        WHEN NOT MATCHED THEN INSERT *
+    """)
+except Exception as e:
+    log.error("device registry merge failed: %s", e)
+    log_error(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+              batch_id=batch_id, message="device registry merge failed", exc=e,
+              table=registry_table_name)
+    raise
+
+n = len(api_records)
+log.info("device registry merge done rows=%d", n)
+log_run(spark, catalog=catalog_name, ops_schema=ops_schema, job_name=JOB_NAME,
+        batch_id=batch_id, level="INFO", message="device registry merge done",
+        rows_affected=n, table=registry_table_name)
